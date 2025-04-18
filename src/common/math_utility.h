@@ -31,10 +31,9 @@
 #ifndef __MATH_UTILITY_H__
 #define __MATH_UTILITY_H__
 
-// Round Down
-#define ROUND_DOWN_TO_MULTIPLE_INT_DIV(x, base) (((x) / (base)) * (base))
+#define ALIGN_DOWN(x, base) (((x) / (base)) * (base))
 
-// Round Up
-#define ROUND_UP_TO_MULTIPLE_INT_DIV(x, base) \
-  (((x + base - 1) / (base)) * (base))
+#define ALIGN_UP(x, base) (((x + base - 1) / (base)) * (base))
+
+#define CEIL_DIVIDE(x, base) ((x + base - 1) / (base))
 #endif  // __MATH_UTILITY_H__

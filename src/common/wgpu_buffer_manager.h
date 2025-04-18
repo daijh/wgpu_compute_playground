@@ -62,22 +62,6 @@ class WGPUBufferManager {
   void write_buffer(wgpu::Buffer buffer, void* data, uint64_t size);
 
   template <typename T>
-  void fill_buffer(wgpu::Buffer buffer,
-                   std::vector<T> data,
-                   uint64_t element_size) {
-    uint64_t data_size = data.size() * sizeof(T);
-    uint64_t wgpu_buffer_size = element_size * sizeof(T);
-
-    if (data_size < static_cast<uint64_t>(kMinWGPUBufferSize)) {
-      CHECK(wgpu_buffer_size == kMinWGPUBufferSize);
-    } else {
-      CHECK(wgpu_buffer_size == data_size);
-    }
-
-    write_buffer(buffer, data.data(), data_size);
-  }
-
-  template <typename T>
   std::string type_to_string() {
     if constexpr (std::is_same<T, float>::value) {
       return "float";
@@ -93,20 +77,20 @@ class WGPUBufferManager {
   }
 
   template <typename T>
-  void log_vector(std::vector<uint8_t> data, size_t log_elements) {
-    const size_t max_logging = ROUND_DOWN_TO_MULTIPLE_INT_DIV(log_elements, 16);
+  void log_vector(uint8_t* data, size_t size, size_t log_elements) {
+    const size_t max_logging = ALIGN_DOWN(log_elements, 16);
 
-    T* ptr = (T*)data.data();
+    T* ptr = (T*)data;
     size_t element_size = sizeof(T);
-    size_t num_elements = data.size() / element_size;
+    size_t num_elements = size / element_size;
 
     double abs_sum = 0.0;
     for (size_t i = 0; i < num_elements; ++i) {
-      T value = *reinterpret_cast<const T*>(data.data() + i * element_size);
+      T value = ptr[i];
 
       float float16_value = 0;
       if constexpr (std::is_same<T, Float16>::value) {
-        float16_value = fp16_ieee_to_fp32_value(ptr[i]);
+        float16_value = fp16_ieee_to_fp32_value(value);
       }
 
       if (i < max_logging) {
@@ -137,6 +121,8 @@ class WGPUBufferManager {
 
       if constexpr (std::is_same<T, Float16>::value) {
         abs_sum += std::abs(float16_value);
+      } else if constexpr (std::is_same<T, uint32_t>::value) {
+        abs_sum += value;
       } else {
         abs_sum += std::abs(value);
       }
@@ -153,7 +139,7 @@ class WGPUBufferManager {
   template <typename T>
   void log_buffer(wgpu::Buffer buffer, size_t log_elements) {
     std::vector<uint8_t> data = read_buffer(buffer);
-    log_vector<T>(data, log_elements);
+    log_vector<T>(data.data(), data.size(), log_elements);
   }
 
  private:

@@ -197,6 +197,11 @@ class BaseComputeRunner {
     wgpu_buffer_manager_->log_buffer<T>(buffer, log_elements);
   }
 
+  template <typename T>
+  void log_vector(uint8_t* data, size_t size, size_t log_elements = SIZE_MAX) {
+    wgpu_buffer_manager_->log_vector<T>(data, size, log_elements);
+  }
+
  private:
   void init_buffer_resources();
   void init_compute_pipeling();

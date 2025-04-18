@@ -49,8 +49,7 @@ bool WGPUBufferManager::initialize() {
 wgpu::Buffer WGPUBufferManager::create_buffer(size_t size,
                                               wgpu::BufferUsage usage) {
   size_t buffer_size = std::max(size, static_cast<size_t>(kMinWGPUBufferSize));
-  buffer_size = ROUND_UP_TO_MULTIPLE_INT_DIV(
-      buffer_size, static_cast<size_t>(kWGPUBufferAlign));
+  buffer_size = ALIGN_UP(buffer_size, static_cast<size_t>(kWGPUBufferAlign));
 
   wgpu::BufferDescriptor bufferDesc;
   bufferDesc.mappedAtCreation = false;
@@ -109,6 +108,7 @@ void WGPUBufferManager::write_buffer(wgpu::Buffer buffer,
   wgpu::Device device = wgpu_context_->device();
   wgpu::Queue queue = device.GetQueue();
 
+  CHECK(buffer.GetSize() >= kMinWGPUBufferSize);
   CHECK(buffer.GetSize() >= size);
   queue.WriteBuffer(buffer, 0, data, size);
 
