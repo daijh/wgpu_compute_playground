@@ -38,7 +38,7 @@
 
 class WGPUContext {
  public:
-  WGPUContext(wgpu::BackendType backend_type,
+  WGPUContext(wgpu::BackendType backend_type = wgpu::BackendType::Undefined,
               wgpu::PowerPreference power_preference =
                   wgpu::PowerPreference::Undefined);
   ~WGPUContext();

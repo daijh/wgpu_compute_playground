@@ -109,6 +109,7 @@ void WGPUBufferManager::write_buffer(wgpu::Buffer buffer,
   wgpu::Device device = wgpu_context_->device();
   wgpu::Queue queue = device.GetQueue();
 
+  CHECK(buffer.GetSize() >= kMinWGPUBufferSize);
   CHECK(buffer.GetSize() >= size);
   queue.WriteBuffer(buffer, 0, data, size);
 

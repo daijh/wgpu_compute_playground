@@ -59,10 +59,7 @@ int main() {
   dawnProcSetProcs(&dawn::native::GetProcs());
 
   // Create WGPUContext.
-  // Specify the default backend to use.
-  constexpr wgpu::BackendType backend_type = wgpu::BackendType::Undefined;
-  std::unique_ptr<WGPUContext> wgpu_context =
-      std::make_unique<WGPUContext>(backend_type);
+  std::unique_ptr<WGPUContext> wgpu_context = std::make_unique<WGPUContext>();
   wgpu_context->initialize();
 
   // Create BaseComputeRunner, passing the WGPUContext.
