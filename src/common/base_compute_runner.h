@@ -202,6 +202,10 @@ class BaseComputeRunner {
     wgpu_buffer_manager_->log_vector<T>(data, size, log_elements);
   }
 
+  std::vector<uint8_t> read_buffer(wgpu::Buffer buffer) {
+    return wgpu_buffer_manager_->read_buffer(buffer);
+  }
+
  private:
   void init_buffer_resources();
   void init_compute_pipeling();
