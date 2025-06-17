@@ -40,8 +40,6 @@ DecodeRunner::DecodeRunner(WGPUContext* wgpu_context)
     : wgpu_context_(wgpu_context) {
   CHECK(wgpu_context);
   std::cout << __func__ << std::endl;
-
-  CHECK(false);
 }
 
 DecodeRunner::~DecodeRunner() {}
@@ -88,21 +86,154 @@ bool DecodeRunner::configure() {
 void DecodeRunner::create_buffers() {
   unsigned int kSeed = 0xDEADBEEF;  // Fixed seed for consistent results
   std::mt19937 gen(kSeed);  // Initialize the generator with the fixed seed
+
+  size_t element_size = 0;
+  size_t buffer_size = 0;
+  wgpu::BufferUsage buffer_usage = wgpu::BufferUsage::None;
+  wgpu::BufferBindingType buffer_binding_type =
+      wgpu::BufferBindingType::BindingNotUsed;
+
+  // input_a_: fp16 block128 quantized
+  std::uniform_real_distribution<> input_a_distribution(-1.0, 1.0);
+  // make it in range(-16, 16) to avoid overflow
+  element_size = CEIL_DIVIDE(M_ * K_, 1);
+  input_a_data_.resize(element_size);
+  for (size_t i = 0; i < element_size; ++i) {
+    input_a_data_[i] = fp16_ieee_from_fp32_value(5.0);
+  }
+
+  buffer_size = input_a_data_.size() * sizeof(input_a_data_[0]);
+  buffer_usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc |
+                 wgpu::BufferUsage::CopyDst;
+  buffer_binding_type = wgpu::BufferBindingType::ReadOnlyStorage;
+  input_a_fp16_buffer_ = compute_runner_->add_buffer(buffer_size, buffer_usage,
+                                                     buffer_binding_type);
+  compute_runner_->write_buffer(input_a_fp16_buffer_, input_a_data_.data(),
+                                buffer_size);
+
+  // input_b_: int4 block32 quantized
+  // use uniform_int_distribution and in range(0, 5) to avoid overflow
+  std::uniform_int_distribution<> input_b_distribution(0, 0xF);
+  element_size = CEIL_DIVIDE(K_ * N_, 8);
+  input_b_data_.resize(element_size);
+  for (size_t i = 0; i < element_size; ++i) {
+    uint32_t packed = 0u;
+  
+    packed |= static_cast<uint8_t>(0x1) << 0;
+    packed |= static_cast<uint8_t>(0x1) << 4;
+    packed |= static_cast<uint8_t>(0x1) << 8;
+    packed |= static_cast<uint8_t>(0x1) << 12;
+    packed |= static_cast<uint8_t>(0x1) << 16;
+    packed |= static_cast<uint8_t>(0x1) << 20;
+    packed |= static_cast<uint8_t>(0x1) << 24;
+    packed |= static_cast<uint8_t>(0x1) << 28;
+
+    input_b_data_[i] = packed;
+  }
+
+  buffer_size = input_b_data_.size() * sizeof(input_b_data_[0]);
+  buffer_usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc |
+                 wgpu::BufferUsage::CopyDst;
+  buffer_binding_type = wgpu::BufferBindingType::ReadOnlyStorage;
+  input_b_int4_buffer_ = compute_runner_->add_buffer(buffer_size, buffer_usage,
+                                                     buffer_binding_type);
+  compute_runner_->write_buffer(input_b_int4_buffer_, input_b_data_.data(),
+                                buffer_size);
+
+
+  // scales_: block128 shape(N, K / 32) -> (8192, 96)
+  std::uniform_real_distribution<> scales_distribution(-0.05, 0.05);
+  element_size = CEIL_DIVIDE(N_ * K_, 32);
+  scales_data_.resize(element_size);
+  for (size_t i = 0; i < element_size; ++i) {
+    scales_data_[i] = fp16_ieee_from_fp32_value(0.0001);
+        // fp16_ieee_from_fp32_value(scales_distribution(gen));
+  }
+
+  buffer_size = scales_data_.size() * sizeof(scales_data_[0]);
+  buffer_usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc |
+                 wgpu::BufferUsage::CopyDst;
+  buffer_binding_type = wgpu::BufferBindingType::ReadOnlyStorage;
+  scales_buffer_ = compute_runner_->add_buffer(
+      buffer_size, buffer_usage, buffer_binding_type);
+  compute_runner_->write_buffer(scales_buffer_,
+                                scales_data_.data(), buffer_size);
+
+  // output_y_
+  element_size = M_ * N_;
+  output_y_data_.resize(element_size);
+
+  buffer_size = output_y_data_.size() * sizeof(output_y_data_[0]);
+  buffer_usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc |
+                 wgpu::BufferUsage::CopyDst;
+  buffer_binding_type = wgpu::BufferBindingType::Storage;
+  output_y_buffer_ = compute_runner_->add_buffer(buffer_size, buffer_usage,
+                                                 buffer_binding_type);
+
+  // uniform_
+  struct Uniforms {
+    alignas(16) uint32_t input_a_shape[3];
+    alignas(8) uint32_t input_a_stride[2];
+    alignas(16) uint32_t input_b_shape[3];
+    alignas(8) uint32_t input_b_stride[2];
+    alignas(16) uint32_t output_shape[3];
+    alignas(8) uint32_t output_stride[2];
+    alignas(4) uint32_t block_size;
+  };
+
+  printf("M_ is %d, N_ is %d, k_ is %d\n", M_, N_, K_);
+  Uniforms uniforms_value = {};
+  uniforms_value.input_a_shape[0] = 1;
+  uniforms_value.input_a_shape[1] = M_;
+  uniforms_value.input_a_shape[2] = K_ / 4; // it's vec4<f16>, so we divide it by 4.
+
+  uniforms_value.input_a_stride[0] = K_ / 4;
+  uniforms_value.input_a_stride[1] = K_ / 4;
+
+  uniforms_value.input_b_shape[0] = N_;
+  uniforms_value.input_b_shape[1] = K_ / 32; // there is 8 * vec4<fp16> in a block, so there are 32 elements in a block.
+  uniforms_value.input_b_shape[2] = 1;
+
+  // B shape is (batch, row, col)
+  uniforms_value.input_b_stride[0] = K_ / 32; // I use N_ * (K_ / 32) previously, it seems I'm wrong
+  uniforms_value.input_b_stride[1] = K_ / 32;
+
+  uniforms_value.output_shape[0] = 1;
+  uniforms_value.output_shape[1] = M_;
+  uniforms_value.output_shape[2] = N_;
+
+  uniforms_value.output_stride[0] = N_; // I use M_ * N_ previously, it seems I'm wrong
+  uniforms_value.output_stride[1] = N_;
+
+  uniforms_value.block_size = 32;
+
+  uniform_data_.resize(sizeof(uniforms_value));
+  memcpy(uniform_data_.data(), &uniforms_value, sizeof(uniforms_value));
+
+  buffer_size = uniform_data_.size() * sizeof(uniform_data_[0]);
+  printf("sizeof(uniforms_value): %zd\n", sizeof(uniforms_value));
+  printf("uniform buffer size: %zd\n", buffer_size);
+  buffer_usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopySrc |
+                 wgpu::BufferUsage::CopyDst;
+  buffer_binding_type = wgpu::BufferBindingType::Uniform;
+  uniform_buffer_ = compute_runner_->add_buffer(buffer_size, buffer_usage,
+                                                buffer_binding_type);
+  compute_runner_->write_buffer(uniform_buffer_, uniform_data_.data(),
+                                buffer_size);
 }
 
 std::string DecodeRunner::generate_shader() {
-  tile_m_ = 64;
-  tile_n_ = 64;
+  tile_ = 8;
 
   workgroup_size_.resize(3);
-  workgroup_size_ = {256, 1, 1};
+  workgroup_size_ = {16, 8, 1};
 
   std::cout << "======\n";
   std::cout << "Workgroup Size: " << workgroup_size_[0] << "x"
             << workgroup_size_[1] << "x" << workgroup_size_[2] << std::endl;
 
   dispatch_size_.resize(3);
-  dispatch_size_[0] = CEIL_DIVIDE(M_, tile_m_) * CEIL_DIVIDE(N_, tile_n_);
+  dispatch_size_[0] = CEIL_DIVIDE(N_, tile_);
   dispatch_size_[1] = 1;
   dispatch_size_[2] = 1;
 
@@ -116,6 +247,127 @@ std::string DecodeRunner::generate_shader() {
   code.clear();  // Clear error flags
 
   code << R"(
+enable f16;
+enable subgroups;
+const workgroup_size_x: u32 = 16;
+const workgroup_size_y: u32 = 8;
+const workgroup_size_z: u32 = 1;
+@group(0) @binding(0) var<storage, read> input_a: array<vec4<f16>>;
+@group(0) @binding(1) var<storage, read> input_b: array<vec4<u32>>;
+@group(0) @binding(2) var<storage, read> scales: array<f16>;
+@group(0) @binding(3) var<storage, read_write> output: array<f16>;
+struct Uniforms {
+  input_a_shape: vec3<u32>,
+  input_a_stride: vec2<u32>,
+  input_b_shape: vec3<u32>,
+  input_b_stride: vec2<u32>,
+  output_shape: vec3<u32>,
+  output_stride: vec2<u32>,
+  block_size: u32
+};
+@group(0) @binding(4) var<uniform> uniforms: Uniforms;
+
+alias input_a_value_t = vec4<f16>;
+alias input_a_indices_t = vec3<u32>;
+fn i2o_input_a(indices : input_a_indices_t)->u32 {
+  return indices[0] * uniforms.input_a_stride[0] + indices[1] * uniforms.input_a_stride[1] + indices[2];
+}
+fn get_input_a_by_indices(indices: input_a_indices_t)->input_a_value_t {
+  return input_a[i2o_input_a(indices)];
+}
+alias input_b_value_t = vec4<u32>;
+alias input_b_indices_t = vec3<u32>;
+fn i2o_input_b(indices : input_b_indices_t)->u32 {
+  return indices[0] * uniforms.input_b_stride[0] + indices[1] * uniforms.input_b_stride[1] + indices[2];
+}
+fn get_input_b_by_indices(indices: input_b_indices_t)->input_b_value_t {
+  return input_b[i2o_input_b(indices)];
+}
+alias output_value_t = f16;
+alias output_indices_t = vec3<u32>;
+alias output_element_t = f16;
+fn o2i_output(offset : u32)->output_indices_t {
+  var indices: output_indices_t;
+  var current = offset;
+  indices[0] = current / uniforms.output_stride[0];
+  current = current % uniforms.output_stride[0];
+  indices[1] = current / uniforms.output_stride[1];
+  current = current % uniforms.output_stride[1];
+  indices[2] = current;
+  return indices;
+}
+fn i2o_output(indices : output_indices_t)->u32 {
+  return indices[0] * uniforms.output_stride[0] + indices[1] * uniforms.output_stride[1] + indices[2];
+}
+fn set_output_by_indices(indices: output_indices_t, value: output_value_t) {
+  output[i2o_output(indices)]=value;
+}
+
+fn mm_readA(batch : u32, row : u32, col : u32) -> input_a_value_t {
+  if (col < uniforms.input_a_shape[2]) {
+    return get_input_a_by_indices(input_a_indices_t(batch, row, col));
+  } else {
+    return input_a_value_t(0);
+  }
+}
+var<workgroup> sub_a: array<input_a_value_t, 128>;
+var<workgroup> inter_results: array<array<output_value_t, 16>, 8>;
+@compute @workgroup_size(workgroup_size_x, workgroup_size_y, workgroup_size_z)
+fn main(@builtin(global_invocation_id) global_id : vec3<u32>,
+        @builtin(workgroup_id) workgroup_id : vec3<u32>,
+        @builtin(local_invocation_index) local_idx : u32,
+        @builtin(local_invocation_id) local_id : vec3<u32>,
+        @builtin(subgroup_invocation_id) sg_id : u32,
+        @builtin(subgroup_size) sg_size : u32) {
+  let global_idx = global_id.x;
+  let workgroup_idx = workgroup_id.x;
+  let output_indices = o2i_output(workgroup_idx * 8);
+  let col = output_indices[2]; // workgroup_idx * 8
+  let row = output_indices[1]; // always 0
+  let batch = output_indices[0]; // always 0
+  let n_blocks_per_col = uniforms.input_b_shape[1]; // 96
+  let num_tiles =  (n_blocks_per_col - 1) / 16 + 1; // 6
+  for (var tile: u32 = 0; tile < num_tiles; tile += 1) {
+    let a_col_start = tile * 128;
+    // load one tile A data into shared memory.
+    for (var a_offset = local_idx; a_offset < 128; a_offset += 128) {
+      let a_col = a_col_start + a_offset;
+      sub_a[a_offset] = mm_readA(batch, row, a_col);
+    }
+    workgroupBarrier();
+    let b_row = col + local_id.y;
+    let block = tile * 16 + local_id.x;
+    let zero_point = output_element_t(8.0);
+    var scale = output_element_t(0);
+    var b_data = input_b_value_t(0);
+    if (block < n_blocks_per_col) {
+      scale = scales[b_row * n_blocks_per_col + block];
+      b_data = get_input_b_by_indices(input_b_indices_t(b_row, block, 0));
+    }
+    var word_offset = local_id.x * 8;
+    for (var i: u32 = 0; i < 4; i++) {
+      let b_value = b_data[i];
+      let b_value_lower = unpack4xU8(b_value & 0x0F0F0F0Fu);
+      let b_value_upper = unpack4xU8((b_value >> 4) & 0x0F0F0F0Fu);
+      let b_quantized_values = mat2x4<output_element_t>(output_element_t(b_value_lower[0]), output_element_t(b_value_upper[0]), output_element_t(b_value_lower[1]), output_element_t(b_value_upper[1]), output_element_t(b_value_lower[2]), output_element_t(b_value_upper[2]), output_element_t(b_value_lower[3]), output_element_t(b_value_upper[3]));
+      let b_dequantized_values = (b_quantized_values - mat2x4<output_element_t>(zero_point, zero_point, zero_point, zero_point, zero_point, zero_point, zero_point, zero_point)) * scale;
+      inter_results[local_id.y][local_id.x] += dot(sub_a[word_offset], b_dequantized_values[0]) + dot(sub_a[word_offset + 1], b_dequantized_values[1]);
+      word_offset += 2;
+    }
+    workgroupBarrier();
+  }
+  if (local_idx < 8) {
+    var output_value = output_value_t(0);
+    for (var b = 0u; b < 16; b++) {
+      output_value += inter_results[local_idx][b];
+    }
+    if (col + local_idx < uniforms.output_shape[2]) {
+      set_output_by_indices(output_indices_t(batch, row, col + local_idx), output_value);;
+    }
+  }
+
+}
+
 )";
 
   return code.str();
