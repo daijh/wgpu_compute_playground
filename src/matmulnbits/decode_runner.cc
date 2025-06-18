@@ -93,13 +93,12 @@ void DecodeRunner::create_buffers() {
   wgpu::BufferBindingType buffer_binding_type =
       wgpu::BufferBindingType::BindingNotUsed;
 
-  // input_a_: fp16 block128 quantized
+  // input_a_: f16, one tile 128 elements, quantized
   std::uniform_real_distribution<> input_a_distribution(-1.0, 1.0);
-  // make it in range(-16, 16) to avoid overflow
   element_size = CEIL_DIVIDE(M_ * K_, 1);
   input_a_data_.resize(element_size);
   for (size_t i = 0; i < element_size; ++i) {
-    input_a_data_[i] = fp16_ieee_from_fp32_value(5.0);
+    input_a_data_[i] = fp16_ieee_from_fp32_value(input_a_distribution(gen));
   }
 
   buffer_size = input_a_data_.size() * sizeof(input_a_data_[0]);
@@ -112,21 +111,20 @@ void DecodeRunner::create_buffers() {
                                 buffer_size);
 
   // input_b_: int4 block32 quantized
-  // use uniform_int_distribution and in range(0, 5) to avoid overflow
   std::uniform_int_distribution<> input_b_distribution(0, 0xF);
   element_size = CEIL_DIVIDE(K_ * N_, 8);
   input_b_data_.resize(element_size);
   for (size_t i = 0; i < element_size; ++i) {
     uint32_t packed = 0u;
   
-    packed |= static_cast<uint8_t>(0x1) << 0;
-    packed |= static_cast<uint8_t>(0x1) << 4;
-    packed |= static_cast<uint8_t>(0x1) << 8;
-    packed |= static_cast<uint8_t>(0x1) << 12;
-    packed |= static_cast<uint8_t>(0x1) << 16;
-    packed |= static_cast<uint8_t>(0x1) << 20;
-    packed |= static_cast<uint8_t>(0x1) << 24;
-    packed |= static_cast<uint8_t>(0x1) << 28;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 0;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 4;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 8;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 12;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 16;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 20;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 24;
+    packed |= static_cast<uint8_t>(input_b_distribution(gen)) << 28;
 
     input_b_data_[i] = packed;
   }
@@ -141,13 +139,13 @@ void DecodeRunner::create_buffers() {
                                 buffer_size);
 
 
-  // scales_: block128 shape(N, K / 32) -> (8192, 96)
+  // scales_: block32
   std::uniform_real_distribution<> scales_distribution(-0.05, 0.05);
   element_size = CEIL_DIVIDE(N_ * K_, 32);
   scales_data_.resize(element_size);
   for (size_t i = 0; i < element_size; ++i) {
-    scales_data_[i] = fp16_ieee_from_fp32_value(0.0001);
-        // fp16_ieee_from_fp32_value(scales_distribution(gen));
+    scales_data_[i] =
+        fp16_ieee_from_fp32_value(scales_distribution(gen));
   }
 
   buffer_size = scales_data_.size() * sizeof(scales_data_[0]);
@@ -181,28 +179,26 @@ void DecodeRunner::create_buffers() {
     alignas(4) uint32_t block_size;
   };
 
-  printf("M_ is %d, N_ is %d, k_ is %d\n", M_, N_, K_);
   Uniforms uniforms_value = {};
   uniforms_value.input_a_shape[0] = 1;
   uniforms_value.input_a_shape[1] = M_;
-  uniforms_value.input_a_shape[2] = K_ / 4; // it's vec4<f16>, so we divide it by 4.
+  uniforms_value.input_a_shape[2] = K_ / 4;
 
   uniforms_value.input_a_stride[0] = K_ / 4;
   uniforms_value.input_a_stride[1] = K_ / 4;
 
   uniforms_value.input_b_shape[0] = N_;
-  uniforms_value.input_b_shape[1] = K_ / 32; // there is 8 * vec4<fp16> in a block, so there are 32 elements in a block.
+  uniforms_value.input_b_shape[1] = K_ / 32;
   uniforms_value.input_b_shape[2] = 1;
 
-  // B shape is (batch, row, col)
-  uniforms_value.input_b_stride[0] = K_ / 32; // I use N_ * (K_ / 32) previously, it seems I'm wrong
+  uniforms_value.input_b_stride[0] = K_ / 32;
   uniforms_value.input_b_stride[1] = K_ / 32;
 
   uniforms_value.output_shape[0] = 1;
   uniforms_value.output_shape[1] = M_;
   uniforms_value.output_shape[2] = N_;
 
-  uniforms_value.output_stride[0] = N_; // I use M_ * N_ previously, it seems I'm wrong
+  uniforms_value.output_stride[0] = N_;
   uniforms_value.output_stride[1] = N_;
 
   uniforms_value.block_size = 32;
@@ -211,8 +207,6 @@ void DecodeRunner::create_buffers() {
   memcpy(uniform_data_.data(), &uniforms_value, sizeof(uniforms_value));
 
   buffer_size = uniform_data_.size() * sizeof(uniform_data_[0]);
-  printf("sizeof(uniforms_value): %zd\n", sizeof(uniforms_value));
-  printf("uniform buffer size: %zd\n", buffer_size);
   buffer_usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopySrc |
                  wgpu::BufferUsage::CopyDst;
   buffer_binding_type = wgpu::BufferBindingType::Uniform;
