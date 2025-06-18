@@ -62,10 +62,21 @@ class DecodeRunner : public AbstractMatMulNBitsRunner {
 
   std::shared_ptr<BaseComputeRunner> compute_runner_;
 
-  wgpu::Buffer output_y_buffer_;
+  // input_a_data_: f16
+  std::vector<Float16> input_a_data_;
+  // input_b_data_: int4 block32 quantized
+  std::vector<uint32_t> input_b_data_;
+  std::vector<Float16> scales_data_;
+  std::vector<Float16> output_y_data_;
+  std::vector<uint8_t> uniform_data_;
 
-  uint32_t tile_m_ = 0;
-  uint32_t tile_n_ = 0;
+  wgpu::Buffer input_a_fp16_buffer_;
+  wgpu::Buffer input_b_int4_buffer_;
+  wgpu::Buffer scales_buffer_;
+  wgpu::Buffer output_y_buffer_;
+  wgpu::Buffer uniform_buffer_;
+
+  uint32_t tile_ = 0;
 
   std::vector<uint32_t> workgroup_size_;
   std::vector<uint32_t> dispatch_size_;
