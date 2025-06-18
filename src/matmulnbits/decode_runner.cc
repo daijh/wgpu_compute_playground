@@ -93,7 +93,7 @@ void DecodeRunner::create_buffers() {
   wgpu::BufferBindingType buffer_binding_type =
       wgpu::BufferBindingType::BindingNotUsed;
 
-  // input_a_: f16, one tile 128 elements, quantized
+  // input_a_: f16
   std::uniform_real_distribution<> input_a_distribution(-1.0, 1.0);
   element_size = CEIL_DIVIDE(M_ * K_, 1);
   input_a_data_.resize(element_size);
