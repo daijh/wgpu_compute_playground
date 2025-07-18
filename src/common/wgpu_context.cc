@@ -90,6 +90,10 @@ void DumpAdapter(const wgpu::Adapter& adapter) {
             << BackendTypeToString(info.backendType) << "\n";
   std::cout << std::setw(13) << "AdapterType" << ": "
             << AdapterTypeToString(info.adapterType) << "\n";
+  std::cout << std::setw(13) << "subgroupMinSize" << ": "
+            << info.subgroupMinSize << "\n";
+  std::cout << std::setw(13) << "subgroupMaxSize" << ": "
+            << info.subgroupMaxSize << "\n";
 }
 
 void DumpDevice(const wgpu::Device& device) {
@@ -120,7 +124,10 @@ WGPUContext::~WGPUContext() {}
 wgpu::Instance WGPUContext::CreateDawnInstance() {
   wgpu::InstanceDescriptor instanceDescriptor{};
   instanceDescriptor.nextInChain = togglesChain_;
-  instanceDescriptor.capabilities.timedWaitAnyEnable = true;
+
+  static constexpr auto kTimedWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
+  instanceDescriptor.requiredFeatureCount = 1;
+  instanceDescriptor.requiredFeatures = &kTimedWaitAny;
 
   wgpu::Instance instance = wgpu::CreateInstance(&instanceDescriptor);
   return instance;
@@ -248,7 +255,6 @@ void WGPUContext::initialize_features(wgpu::Adapter adapter,
   adapter.GetFeatures(&supported_features);
 
   requiredFeatures_.push_back(wgpu::FeatureName::ShaderF16);
-  requiredFeatures_.push_back(wgpu::FeatureName::SubgroupsF16);
   requiredFeatures_.push_back(wgpu::FeatureName::Subgroups);
   requiredFeatures_.push_back(wgpu::FeatureName::TimestampQuery);
   for (auto& feature : features) {

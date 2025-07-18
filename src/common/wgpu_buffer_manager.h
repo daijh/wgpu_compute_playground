@@ -103,8 +103,10 @@ class WGPUBufferManager {
         if constexpr (std::is_same<T, uint32_t>::value) {
           std::cout << value << "(" << std::showbase << std::hex << value << ")"
                     << " " << std::noshowbase << std::dec;
-        } else if constexpr (std::is_same<T, int32_t>::value) {
-          std::cout << value << " ";
+        } else if constexpr (std::is_same<T, int32_t>::value ||
+                             std::is_same<T, int8_t>::value ||
+                             std::is_same<T, uint8_t>::value) {
+          std::cout << (int32_t)(value) << " ";
         } else if constexpr (std::is_same<T, Float16>::value) {
           std::cout << std::setprecision(3) << std::fixed << float16_value
                     << " ";

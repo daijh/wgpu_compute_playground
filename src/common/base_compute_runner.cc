@@ -214,7 +214,7 @@ std::pair<double, double> BaseComputeRunner::run(bool high_resolution_clock) {
 
   {
     wgpu::Future future = queue.OnSubmittedWorkDone(
-        wgpu::CallbackMode::WaitAnyOnly, [&](wgpu::QueueWorkDoneStatus status) {
+        wgpu::CallbackMode::WaitAnyOnly, [&](wgpu::QueueWorkDoneStatus status, wgpu::StringView) {
           CHECK(wgpu::QueueWorkDoneStatus::Success == status);
 
           time_measurer.end();

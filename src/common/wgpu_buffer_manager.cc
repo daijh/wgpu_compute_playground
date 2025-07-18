@@ -79,7 +79,8 @@ std::vector<uint8_t> WGPUBufferManager::read_buffer(wgpu::Buffer buffer) {
 
   {
     wgpu::Future future = queue.OnSubmittedWorkDone(
-        wgpu::CallbackMode::WaitAnyOnly, [](wgpu::QueueWorkDoneStatus status) {
+        wgpu::CallbackMode::WaitAnyOnly, [](wgpu::QueueWorkDoneStatus status,
+                wgpu::StringView message) {
           CHECK(wgpu::QueueWorkDoneStatus::Success == status);
         });
     instance.WaitAny(future, UINT64_MAX);
@@ -114,7 +115,8 @@ void WGPUBufferManager::write_buffer(wgpu::Buffer buffer,
 
   {
     wgpu::Future future = queue.OnSubmittedWorkDone(
-        wgpu::CallbackMode::WaitAnyOnly, [](wgpu::QueueWorkDoneStatus status) {
+        wgpu::CallbackMode::WaitAnyOnly, [](wgpu::QueueWorkDoneStatus status,
+                wgpu::StringView message) {
           CHECK(wgpu::QueueWorkDoneStatus::Success == status);
         });
     instance.WaitAny(future, UINT64_MAX);

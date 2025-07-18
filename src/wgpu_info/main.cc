@@ -185,16 +185,10 @@ void DumpAdapterProperties(const wgpu::Adapter& adapter,
                            const std::string& indent = "  ") {
   wgpu::Status ret;
 
-  wgpu::AdapterPropertiesSubgroups subgroup_properties;
-  subgroup_properties.subgroupMinSize = 0;
-  subgroup_properties.subgroupMaxSize = 0;
-
   wgpu::AdapterInfo info = {};
-  info.nextInChain = &subgroup_properties;
 
   ret = adapter.GetInfo(&info);
   CHECK(ret == wgpu::Status::Success);
-  CHECK(subgroup_properties.nextInChain == nullptr);
 
   std::cout << indent << "vendor: " << info.vendor << "\n";
   std::cout << indent << "architecture: " << info.architecture << "\n";
@@ -204,12 +198,8 @@ void DumpAdapterProperties(const wgpu::Adapter& adapter,
             << "backendType: " << BackendTypeToString(info.backendType) << "\n";
   std::cout << indent
             << "adapterType: " << AdapterTypeToString(info.adapterType) << "\n";
-  std::cout << indent
-            << "subgroupMinSize: " << subgroup_properties.subgroupMinSize
-            << "\n";
-  std::cout << indent
-            << "subgroupMaxSize: " << subgroup_properties.subgroupMaxSize
-            << "\n";
+  std::cout << indent << "subgroupMinSize: " << info.subgroupMinSize << "\n";
+  std::cout << indent << "subgroupMaxSize: " << info.subgroupMaxSize << "\n";
 }
 
 void DumpAdapterFeatures(const wgpu::Adapter& adapter,
@@ -310,13 +300,43 @@ void dump_toggles() {
   std::cout << "\n";
 }
 
+void print_usage(const std::string& program_name) {
+    std::cerr << "Usage: " << program_name << " [options]\n"
+              << "Options:\n"
+              << "  -d, --detail   Print detail info.\n"
+              << "  -h, --help     Display this help message.\n";
+}
+
 int main(int argc, char** argv) {
+  bool detail_mode = false;
+  std::string program_name = argv[0];
+
+  // Start iterating from the first actual argument (index 1)
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+
+    if (arg == "-h" || arg == "--help") {
+      print_usage(program_name);
+      return 0;  // Exit after printing help
+    } else if (arg == "-d" || arg == "--detail") {
+      detail_mode = true;
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      print_usage(program_name);
+      return 1;  // Exit with an error
+    }
+  }
+
   dawnProcSetProcs(&dawn::native::GetProcs());
 
-  dump_toggles();
+  if (detail_mode) {
+    dump_toggles();
+  }
 
   wgpu::InstanceDescriptor instanceDescriptor{};
-  instanceDescriptor.capabilities.timedWaitAnyEnable = true;
+  static constexpr auto kTimedWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
+  instanceDescriptor.requiredFeatureCount = 1;
+  instanceDescriptor.requiredFeatures = &kTimedWaitAny;
   wgpu::Instance instance = wgpu::CreateInstance(&instanceDescriptor);
 
   std::vector<wgpu::PowerPreference> power_preferences = {
