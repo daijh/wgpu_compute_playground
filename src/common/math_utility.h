@@ -36,4 +36,93 @@
 #define ALIGN_UP(x, base) (((x + base - 1) / (base)) * (base))
 
 #define CEIL_DIVIDE(x, base) ((x + base - 1) / (base))
+
+#include <cmath>  // For std::abs
+#include <iomanip>
+#include <iostream>     // For std::cerr and std::cout
+#include <type_traits>  // For std::common_type
+
+#include "fp16.h"
+
+#include "data_types.h"
+
+// Function to check if two arrays with potentially different data types are
+// "close". It uses specific logic for integer vs. floating-point types.
+template <typename T1, typename T2>
+inline bool is_close(const T1* input_data,
+                     size_t input_size,
+                     const T2* ground_true_data,
+                     size_t ground_true_size,
+                     // Default tolerances are now based on the common_type.
+                     // Note: For integer types, only atol is used.
+                     typename std::common_type<T1, T2>::type rtol = 0.1,
+                     typename std::common_type<T1, T2>::type atol = 0.02) {
+  uint32_t errors = 0;
+
+  if (input_size != ground_true_size) {
+    std::cerr << "Error: Input tensors must have the same size: " << input_size
+              << ", " << ground_true_size << std::endl;
+    return false;
+  }
+
+  using CommonType = typename std::common_type<T1, T2>::type;
+
+  bool result = true;
+  for (size_t i = 0; i < input_size; ++i) {
+    CommonType val_input = static_cast<CommonType>(input_data[i]);
+    CommonType val_ground_true = static_cast<CommonType>(ground_true_data[i]);
+
+    // Use 'if constexpr' to provide distinct logic for integer and
+    // floating-point types at compile time.
+    if constexpr (std::is_integral_v<CommonType>) {
+      // --- Logic for Integral Types (like uint32_t, int, etc.) ---
+      CommonType diff;
+      // Safely calculate the absolute difference to avoid unsigned underflow.
+      if (val_input > val_ground_true) {
+        diff = val_input - val_ground_true;
+      } else {
+        diff = val_ground_true - val_input;
+      }
+
+      // For integers, relative tolerance is often not meaningful. We use
+      // the absolute tolerance 'atol'. Note that the default atol=0.02
+      // will be cast to 0 for integers, meaning exact equality is required by
+      // default. Provide a non-zero integer 'atol' for tolerant comparison.
+      CommonType integer_atol = static_cast<CommonType>(atol);
+      if (diff > integer_atol) {
+        std::cout << "Index " << i << ": input " << val_input << ", expected "
+                  << val_ground_true << std::endl;
+        std::cout << "Difference: " << diff
+                  << " > Tolerance (atol): " << integer_atol << std::endl;
+        result = false;
+        ++errors;
+      }
+    } else {
+      // --- Logic for Floating-Point Types (float, double) ---
+      CommonType diff = std::abs(val_input - val_ground_true);
+      CommonType tolerance =
+          static_cast<CommonType>(atol) +
+          static_cast<CommonType>(rtol) * std::abs(val_ground_true);
+
+      if (diff > tolerance) {
+        std::cout << "Index " << i << ": input " << input_data[i]
+                  << " (converted to " << val_input << "), expected "
+                  << ground_true_data[i] << " (converted to " << val_ground_true
+                  << ")" << std::endl;
+        std::cout << "Converted Difference: " << std::fixed
+                  << std::setprecision(20) << diff << std::endl;
+        std::cout << "Tolerance: " << std::fixed << std::setprecision(20)
+                  << tolerance << std::endl;
+        result = false;
+        ++errors;
+      }
+    }
+    if (errors >= 10) {
+      return false;
+    }
+  }
+
+  return result;
+}
+
 #endif  // __MATH_UTILITY_H__

@@ -61,6 +61,14 @@ class WGPUBufferManager {
   std::vector<uint8_t> read_buffer(wgpu::Buffer buffer);
   void write_buffer(wgpu::Buffer buffer, void* data, uint64_t size);
 
+  wgpu::Texture create_texture(uint32_t width,
+                               uint32_t height,
+                               wgpu::TextureFormat texture_format,
+                               wgpu::TextureUsage texture_usage);
+
+  std::vector<uint8_t> read_texture(wgpu::Texture texture);
+  void write_texture(wgpu::Texture texture, void* data, uint64_t size);
+
   template <typename T>
   std::string type_to_string() {
     if constexpr (std::is_same<T, float>::value) {
@@ -71,6 +79,10 @@ class WGPUBufferManager {
       return "uint32_t";
     } else if constexpr (std::is_same<T, int32_t>::value) {
       return "int32_t";
+    } else if constexpr (std::is_same<T, uint8_t>::value) {
+      return "uint8_t";
+    } else if constexpr (std::is_same<T, int8_t>::value) {
+      return "int8_t";
     } else {
       return "not implememt";
     }
