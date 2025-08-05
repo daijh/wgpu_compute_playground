@@ -301,10 +301,10 @@ void dump_toggles() {
 }
 
 void print_usage(const std::string& program_name) {
-    std::cerr << "Usage: " << program_name << " [options]\n"
-              << "Options:\n"
-              << "  -d, --detail   Print detail info.\n"
-              << "  -h, --help     Display this help message.\n";
+  std::cerr << "Usage: " << program_name << " [options]\n"
+            << "Options:\n"
+            << "  -d, --detail   Print detail info.\n"
+            << "  -h, --help     Display this help message.\n";
 }
 
 int main(int argc, char** argv) {

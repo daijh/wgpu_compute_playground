@@ -36,6 +36,15 @@
 #include <dawn/webgpu_cpp_print.h>
 #include <webgpu/webgpu_cpp.h>
 
+inline wgpu::BackendType StringToBackendType(std::string type) {
+  if (type == "vulkan")
+    return wgpu::BackendType::Vulkan;
+  else if (type == "d3d12")
+    return wgpu::BackendType::D3D12;
+  else
+    return wgpu::BackendType::Undefined;
+}
+
 class WGPUContext {
  public:
   WGPUContext(wgpu::BackendType backend_type = wgpu::BackendType::Undefined,

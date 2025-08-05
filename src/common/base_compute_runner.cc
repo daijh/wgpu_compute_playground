@@ -34,6 +34,7 @@
 
 #include "base_compute_runner.h"
 #include "check.h"
+#include "texture_utility.h"
 #include "time_utility.h"
 
 BaseComputeRunner::BaseComputeRunner(WGPUContext* wgpu_context)
@@ -53,13 +54,77 @@ wgpu::Buffer BaseComputeRunner::add_buffer(
     wgpu::BufferUsage usage,
     wgpu::BufferBindingType binding_type) {
   wgpu::Buffer buffer = wgpu_buffer_manager_->create_buffer(size, usage);
-  buffer_infos_.emplace_back(buffer, size, usage, binding_type);
+
+  wgpu::BindGroupLayoutEntry bind_group_layout_entry = {};
+  bind_group_layout_entry.binding = binding_index_;
+  bind_group_layout_entry.visibility = wgpu::ShaderStage::Compute;
+  bind_group_layout_entry.buffer.type = binding_type;
+  bind_group_layout_entries_.push_back(bind_group_layout_entry);
+
+  wgpu::BindGroupEntry bind_group_entry = {};
+  bind_group_entry.binding = binding_index_;
+  bind_group_entry.buffer = buffer;
+  bind_group_entry.offset = 0;
+  bind_group_entry.size = buffer.GetSize();
+  bind_group_entries_.push_back(bind_group_entry);
+
+  ++binding_index_;
   return buffer;
 }
 
-int BaseComputeRunner::set_shader(std::string code, std::string entry_point) {
+wgpu::Texture BaseComputeRunner::add_texture(
+    uint32_t width,
+    uint32_t height,
+    wgpu::TextureFormat texture_format,
+    wgpu::TextureUsage texture_usage,
+    wgpu::StorageTextureAccess storage_texture_access) {
+  wgpu::Texture texture = wgpu_buffer_manager_->create_texture(
+      width, height, texture_format, texture_usage);
+
+  wgpu::TextureViewDescriptor texture_view_desc = {};
+  texture_view_desc.format = texture_format;
+  texture_view_desc.dimension = wgpu::TextureViewDimension::e2D;
+  texture_view_desc.mipLevelCount = 1;
+  texture_view_desc.arrayLayerCount = 1;
+  texture_view_desc.aspect = wgpu::TextureAspect::All;
+
+  wgpu::TextureView texture_view = texture.CreateView(&texture_view_desc);
+  CHECK(texture_view);
+
+  wgpu::BindGroupLayoutEntry bind_group_layout_entry = {};
+  bind_group_layout_entry.binding = binding_index_;
+  bind_group_layout_entry.visibility = wgpu::ShaderStage::Compute;
+  if (texture_usage & wgpu::TextureUsage::TextureBinding) {
+    bind_group_layout_entry.texture.sampleType =
+        get_texture_sample_type(texture_format);
+    bind_group_layout_entry.texture.viewDimension =
+        wgpu::TextureViewDimension::e2D;
+  } else if (texture_usage & wgpu::TextureUsage::StorageBinding) {
+    bind_group_layout_entry.storageTexture.access = storage_texture_access;
+    bind_group_layout_entry.storageTexture.format = texture_format;
+    bind_group_layout_entry.storageTexture.viewDimension =
+        wgpu::TextureViewDimension::e2D;
+  } else {
+    CHECK(0);
+  }
+  bind_group_layout_entries_.push_back(bind_group_layout_entry);
+
+  wgpu::BindGroupEntry bind_group_entry = {};
+  bind_group_entry.binding = binding_index_;
+  bind_group_entry.textureView = texture_view;
+  bind_group_entries_.push_back(bind_group_entry);
+
+  ++binding_index_;
+  return texture;
+}
+
+int BaseComputeRunner::set_shader(
+    std::string code,
+    std::string entry_point,
+    std::vector<wgpu::ConstantEntry> const_entries) {
   code_ = code;
   entry_point_ = entry_point;
+  const_entries_ = const_entries;
   return 0;
 }
 
@@ -77,36 +142,15 @@ int BaseComputeRunner::set_dispatch(uint32_t dispatch_x,
 void BaseComputeRunner::init_buffer_resources() {
   wgpu::Device device = wgpu_context_->device();
 
-  std::vector<wgpu::BindGroupLayoutEntry> bind_group_layout;
-  std::vector<wgpu::BindGroupEntry> bind_group;
-
-  uint32_t binding_index = 0;
-  for (auto& info : buffer_infos_) {
-    wgpu::BindGroupLayoutEntry bind_group_layout_entry = {};
-    bind_group_layout_entry.binding = binding_index;
-    bind_group_layout_entry.buffer.type = info.binding_type;
-    bind_group_layout_entry.visibility = wgpu::ShaderStage::Compute;
-    bind_group_layout.push_back(bind_group_layout_entry);
-
-    wgpu::BindGroupEntry bind_group_entry;
-    bind_group_entry.binding = binding_index;
-    bind_group_entry.buffer = info.buffer;
-    bind_group_entry.offset = 0;
-    bind_group_entry.size = info.buffer.GetSize();
-    bind_group.push_back(bind_group_entry);
-
-    ++binding_index;
-  }
-
   wgpu::BindGroupLayoutDescriptor bind_group_layout_desc;
-  bind_group_layout_desc.entryCount = bind_group_layout.size();
-  bind_group_layout_desc.entries = bind_group_layout.data();
+  bind_group_layout_desc.entryCount = bind_group_layout_entries_.size();
+  bind_group_layout_desc.entries = bind_group_layout_entries_.data();
   bind_group_layout_ = device.CreateBindGroupLayout(&bind_group_layout_desc);
 
   wgpu::BindGroupDescriptor bind_group_desc;
   bind_group_desc.layout = bind_group_layout_;
-  bind_group_desc.entryCount = bind_group.size();
-  bind_group_desc.entries = bind_group.data();
+  bind_group_desc.entryCount = bind_group_entries_.size();
+  bind_group_desc.entries = bind_group_entries_.data();
   bind_group_ = device.CreateBindGroup(&bind_group_desc);
 }
 
@@ -136,6 +180,12 @@ void BaseComputeRunner::init_compute_pipeling() {
   compute_pipeline_desc.compute.entryPoint = entry_point_.c_str();
   compute_pipeline_desc.compute.module = compute_shader_module;
   compute_pipeline_desc.layout = pipeline_layout_;
+
+  if (const_entries_.size() > 0) {
+    compute_pipeline_desc.compute.constantCount = const_entries_.size();
+    compute_pipeline_desc.compute.constants = const_entries_.data();
+  }
+
   compute_pipeline_ = device.CreateComputePipeline(&compute_pipeline_desc);
 }
 
@@ -214,7 +264,8 @@ std::pair<double, double> BaseComputeRunner::run(bool high_resolution_clock) {
 
   {
     wgpu::Future future = queue.OnSubmittedWorkDone(
-        wgpu::CallbackMode::WaitAnyOnly, [&](wgpu::QueueWorkDoneStatus status, wgpu::StringView) {
+        wgpu::CallbackMode::WaitAnyOnly,
+        [&](wgpu::QueueWorkDoneStatus status, wgpu::StringView) {
           CHECK(wgpu::QueueWorkDoneStatus::Success == status);
 
           time_measurer.end();
@@ -233,10 +284,4 @@ std::pair<double, double> BaseComputeRunner::run(bool high_resolution_clock) {
       static_cast<double>(latency_ns) / (high_resolution_clock ? 1.0 : 1000.0);
 
   return std::make_pair(cpu_latency, gpu_latency);
-}
-
-void BaseComputeRunner::write_buffer(wgpu::Buffer buffer,
-                                     void* data,
-                                     uint64_t size) {
-  wgpu_buffer_manager_->write_buffer(buffer, data, size);
 }

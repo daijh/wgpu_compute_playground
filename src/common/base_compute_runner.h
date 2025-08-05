@@ -106,6 +106,12 @@ class BaseComputeRunner {
                           wgpu::BufferUsage usage,
                           wgpu::BufferBindingType binding_type);
 
+  wgpu::Texture add_texture(uint32_t width,
+                            uint32_t height,
+                            wgpu::TextureFormat texture_format,
+                            wgpu::TextureUsage texture_usage,
+                            wgpu::StorageTextureAccess storage_texture_access);
+
   /**
    * @brief Sets the compute shader code and entry point.
    *
@@ -113,12 +119,15 @@ class BaseComputeRunner {
    * entry point function within the shader.
    *
    * @param code The WGSL shader source code.
-   * @param entry_point The name of the function to execute as the compute
+   * @param entry_point The name of the function within the shader to execute.
+   * @param const_entries Optional vector of constant entries to pass to the
    * shader.
    * @return An integer indicating the success or failure of setting the shader
    * (e.g., 0 for success, non-zero for error).
    */
-  int set_shader(std::string code, std::string entry_point);
+  int set_shader(std::string code,
+                 std::string entry_point,
+                 std::vector<wgpu::ConstantEntry> const_entries = {});
 
   /**
    * @brief Sets the dispatch dimensions for the compute shader execution.
@@ -158,7 +167,13 @@ class BaseComputeRunner {
    * @param data A pointer to the source data in system memory.
    * @param size The size of the data to write in bytes.
    */
-  void write_buffer(wgpu::Buffer buffer, void* data, uint64_t size);
+  void write_buffer(wgpu::Buffer buffer, void* data, uint64_t size) {
+    wgpu_buffer_manager_->write_buffer(buffer, data, size);
+  }
+
+  void write_texture(wgpu::Texture texture, void* data, uint64_t size) {
+    wgpu_buffer_manager_->write_texture(texture, data, size);
+  }
 
   /**
    * @brief Measures the latency of the compute operation.
@@ -206,6 +221,12 @@ class BaseComputeRunner {
     return wgpu_buffer_manager_->read_buffer(buffer);
   }
 
+  std::vector<uint8_t> read_texture(wgpu::Texture texture) {
+    return wgpu_buffer_manager_->read_texture(texture);
+  }
+
+  WGPUContext* context() const { return wgpu_context_; }
+
  private:
   void init_buffer_resources();
   void init_compute_pipeling();
@@ -216,16 +237,13 @@ class BaseComputeRunner {
   WGPUContext* wgpu_context_ = nullptr;
   std::unique_ptr<WGPUBufferManager> wgpu_buffer_manager_;
 
-  struct BufferInfo {
-    wgpu::Buffer buffer;
-    uint64_t size;
-    wgpu::BufferUsage usage;
-    wgpu::BufferBindingType binding_type;
-  };
-  std::vector<BufferInfo> buffer_infos_;
+  uint32_t binding_index_ = 0;
+  std::vector<wgpu::BindGroupLayoutEntry> bind_group_layout_entries_;
+  std::vector<wgpu::BindGroupEntry> bind_group_entries_;
 
   std::string code_;
   std::string entry_point_;
+  std::vector<wgpu::ConstantEntry> const_entries_;
 
   std::vector<uint32_t> dispatch_count_;
 

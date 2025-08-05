@@ -32,6 +32,8 @@ A lightweight playground for experimenting with WebGPU compute shaders using the
 
 4. **Run:**
 
+    **Known Issue on Windows:** You might need to copy `D3DCompiler_47.dll` and `vulkan-1.dll` from `C:\Windows\System32` into the `build\wgpu\Debug\` directory for the application to run correctly.
+
     ```shell
     # Windows
     build\wgpu\Debug\basic_compute.exe
