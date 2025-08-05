@@ -14,11 +14,11 @@ if("Linux" STREQUAL ${CMAKE_HOST_SYSTEM_NAME})
     -name CMakeLists.txt \
     | xargs -I '{}' cmake-format -i '{}' && \
 \
-    markdownlint -c ${CMAKE_CURRENT_SOURCE_DIR}/.markdownlint.yaml -f ${CMAKE_CURRENT_SOURCE_DIR}/README.md && \
+    markdownlint-cli2 --config ${CMAKE_CURRENT_SOURCE_DIR}/.markdownlint.yaml --fix ${CMAKE_CURRENT_SOURCE_DIR}/README.md && \
 \
     find ${CMAKE_CURRENT_SOURCE_DIR}/src \
     -regextype posix-extended -regex '.*\\.(md)$' \
-    | xargs -I '{}' markdownlint -c ${CMAKE_CURRENT_SOURCE_DIR}/.markdownlint.yaml -f '{}' \
+    | xargs -I '{}' markdownlint-cli2 --config ${CMAKE_CURRENT_SOURCE_DIR}/.markdownlint.yaml --fix '{}' \
     "
     VERBATIM)
 endif()

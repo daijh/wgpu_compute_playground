@@ -120,7 +120,8 @@ class BaseComputeRunner {
    *
    * @param code The WGSL shader source code.
    * @param entry_point The name of the function within the shader to execute.
-   * @param const_entries Optional vector of constant entries to pass to the shader.
+   * @param const_entries Optional vector of constant entries to pass to the
+   * shader.
    * @return An integer indicating the success or failure of setting the shader
    * (e.g., 0 for success, non-zero for error).
    */

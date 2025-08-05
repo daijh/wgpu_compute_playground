@@ -216,7 +216,6 @@ void WGPUBufferManager::write_texture(wgpu::Texture texture,
   wgpu::Queue queue = device.GetQueue();
 
   const uint32_t width = texture.GetWidth();
-  const uint32_t height = texture.GetHeight();
 
   const uint32_t bytes_per_row =
       get_texture_bytes_per_pixel(texture.GetFormat()) *
